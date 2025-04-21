@@ -1,17 +1,23 @@
 --- @module "Sonson's Boner"
---- @version 1.0.0
+--- @version 1.0.1
 
 local API = require("api")
+API.Write_fake_mouse_do(false)
 
 local Boner = {
     constants = {
         scriptVersion = "1.0.0",
         bone = "Dragonkin bones",
+        ash = "Infernal ashes",
         objects = {
             BANK_CHEST = {
                 name = "Bank chest",
                 id = 125115,
                 type = 0
+            },
+            BANKER = {
+                name = "Banker",
+                type = 1,
             }
         },
         ids = {
@@ -20,17 +26,19 @@ local Boner = {
     },
     variables = {
         interval = 1,
-        attemptThreshold = 5,
+        attemptThreshold = 2,
         status = "nil",
         timestamps = {
             bank = 0,
             buff = 0,
-            bone = 0
+            bone = 0,
+            ash = 0
         },
         attempts = {
             bank = 0,
             buff = 0,
-            bone = 0
+            bone = 0,
+            ash = 0
         }
     }
 }
@@ -46,11 +54,13 @@ function Boner:getBones()
         API.Write_LoopyLoop(false)
     end
 
+    self.variables.attempts.bank = self.variables.attempts.bank + 1
     print("- No bones found in inventory")
+
     self.variables.status = "Getting bones"
-    if Interact:Object(self.constants.objects.BANK_CHEST.name, "Load Last Preset from", 10) then
+    if Interact:Object(self.constants.objects.BANK_CHEST.name, "Load Last Preset from", 10)
+        or Interact:NPC(self.constants.objects.BANKER.name, "Load Last Preset from", 10) then
         print("+ Loading last preset")
-        self.variables.attempts.bank = 0
         self.variables.timestamps.bank = API.Get_tick()
     end
 end
@@ -62,7 +72,9 @@ function Boner:boneBuff()
         API.Write_LoopyLoop(false)
     end
 
+    self.variables.attempts.buff = self.variables.attempts.buff + 1
     print("- Powder of burials buff not found or expiring")
+
     self.variables.status = "Applying bone buff"
     if Inventory:DoAction(self.constants.ids.POWDER_OF_BURIALS, 1, API.OFF_ACT_GeneralInterface_route) then
         print("+ Reapplying buff")
@@ -72,19 +84,50 @@ function Boner:boneBuff()
 end
 
 function Boner:bone()
-    if self:isOnCooldown(self.variables.timestamps.bone) then return end
-    if self:exceededAttempts(self.variables.attempts.bone) then
+    if self:isOnCooldown(self.variables.timestamps.bone)
+        or self:isOnCooldown(self.variables.timestamps.ash)then return end
+
+    if self:exceededAttempts(self.variables.attempts.bone) or
+        self:exceededAttempts(self.variables.attempts.ash)then
         print("- Can't bone no more (NO BONES)")
         API.Write_LoopyLoop(false)
     end
 
-    self.variables.status = "Boning"
-    self.variables.attempts.bone = self.variables.attempts.bone + 1
-    if API.DoAction_Ability(self.constants.bone, 1, API.OFF_ACT_GeneralInterface_route, false) then
-        print("+ Boned")
-        self.variables.timestamps.bone = API.Get_tick()
-        self.variables.attempts.bone = 0
+    local ash = false
+    local bone = false
+
+    if Boner:hasBone() then
+        self.variables.attempts.bank = 0
+        self.variables.attempts.bone = self.variables.attempts.bone + 1
+        if API.DoAction_Ability(self.constants.bone, 1, API.OFF_ACT_GeneralInterface_route, false) then
+            print("+ Boned")
+            bone = true
+            self.variables.timestamps.bone = API.Get_tick()
+            self.variables.attempts.bone = 0
+        end
     end
+
+    -- Thank you Ernie!
+    if Boner:hasAsh() then
+        self.variables.attempts.bank = 0
+        self.variables.attempts.ash = self.variables.attempts.ash + 1
+        if API.DoAction_Ability(self.constants.ash, 1, API.OFF_ACT_GeneralInterface_route, false) then
+            print("+ Ashed")
+            self.variables.timestamps.ash = API.Get_tick()
+            self.variables.attempts.ash = 0
+            ash = true
+        end
+    end
+
+    if bone and ash then
+        -- Thank you Ernie!
+        self.variables.status = "Bashing"
+    elseif bone then
+        self.variables.status = "Boning"
+    elseif ash then
+        self.variables.status = "Ashing"
+    end
+
 end
 
 ------------------------------------------
@@ -108,6 +151,11 @@ function Boner:hasBone()
     return Inventory:Contains(self.constants.bone)
 end
 
+-- Thank you Ernie!
+function Boner:hasAsh()
+    return Inventory:Contains(self.constants.ash)
+end
+
 ------------------------------------------
 --# DATA YUM
 ------------------------------------------
@@ -128,18 +176,25 @@ end
 ------------------------------------------
 
 while API.Read_LoopyLoop() do
+    -- Cache handling
+    if not API.CacheEnabled then
+        print("- Cache not enabled. Exiting script.")
+        API.Write_LoopyLoop(false)
+        return
+    end
+
     -- Buff handling
     if not Boner:burialBuffExists() then
         Boner:boneBuff()
     end
 
     -- Inventory handling
-    if not Boner:hasBone() then
+    if not Boner:hasBone() and not Boner:hasAsh() then
         Boner:getBones()
     end
 
     -- Bone handling
-    if Boner:hasBone() then
+    if Boner:hasBone() or Boner:hasAsh() then
         Boner:bone()
     end
 
